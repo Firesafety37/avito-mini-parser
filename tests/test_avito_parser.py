@@ -44,10 +44,25 @@ def test_status_rows_cover_empty_and_errors():
     assert set(row) == set(p.FIELDNAMES)
 
 
+def test_live_first_uses_http_before_samples():
+    html = """
+    <article data-marker="item">
+      <a itemprop="url" href="/moskva/zapchasti_i_aksessuary/live"><h3 itemprop="name">Live 223112R020</h3></a>
+      <span data-marker="item-price">777 ₽</span>
+      <span data-marker="item-address">Москва</span>
+      <span>Новое</span>
+    </article>
+    """
+
+    rows = p.collect(ROOT / "samples", mode="live-first", checked_at="now", fetch_html=lambda url: html)
+
+    assert [r for r in rows if r["article"] == "223112R020"][0]["price"] == 777
+
+
 def test_main_writes_csv_with_required_columns(tmp_path):
     out = tmp_path / "result.csv"
 
-    code = p.main(["--samples", str(ROOT / "samples"), "--output", str(out), "--checked-at", "now"])
+    code = p.main(["--mode", "samples", "--samples", str(ROOT / "samples"), "--output", str(out), "--checked-at", "now"])
 
     assert code == 0
     rows = list(csv.DictReader(out.open(encoding="utf-8")))

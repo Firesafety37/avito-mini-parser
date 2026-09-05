@@ -2,7 +2,7 @@
 
 Мини-парсер объявлений Avito по артикулам из тестового задания.
 
-По умолчанию проект работает с сохранёнными HTML-файлами из `samples/`, чтобы результат был воспроизводимым и не зависел от блокировок Avito. Live-режим есть, но не обходит CAPTCHA, авторизацию, cookies и другие средства защиты.
+По умолчанию проект сначала делает live-запросы к Avito. Если Avito ограничивает доступ, включается fallback на сохранённые HTML-файлы из `samples/`. Live-режим не обходит CAPTCHA, авторизацию, cookies и другие средства защиты.
 
 ## Установка
 
@@ -15,13 +15,21 @@ pip install -r requirements.txt
 ## Запуск
 
 ```bash
-python avito_parser.py --samples samples --output result.csv
+python avito_parser.py --output result.csv
 ```
 
-Опционально live-запросы к Avito:
+По умолчанию используется `--mode live-first`: сначала live-запросы к Avito, если Avito ограничил доступ — fallback на `samples/`.
+
+Только live, без fallback:
 
 ```bash
-python avito_parser.py --live --output result.csv
+python avito_parser.py --mode live --output result-live.csv
+```
+
+Только сохранённые HTML:
+
+```bash
+python avito_parser.py --mode samples --samples samples --output result.csv
 ```
 
 ## Проверка

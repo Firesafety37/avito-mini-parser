@@ -124,25 +124,36 @@ def write_csv(rows: list[dict], output: Path) -> None:
         writer.writerows(rows)
 
 
-def collect(samples: Path, live: bool, checked_at: str) -> list[dict]:
+def fetch_live_html(url: str) -> str:
+    r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+    r.raise_for_status()
+    if "Доступ ограничен" in r.text or "captcha" in r.text.lower():
+        raise RuntimeError("Avito access restricted")
+    return r.text
+
+
+def collect(samples: Path, mode: str, checked_at: str, fetch_html=fetch_live_html) -> list[dict]:
     out = []
     for article, name in ARTICLES.items():
         query = f"{article} {name}"
+        sample = samples / f"{article}.html"
         try:
-            sample = samples / f"{article}.html"
-            if sample.exists():
+            html = ""
+            if mode in {"live", "live-first"}:
+                html = fetch_html(build_search_url(query))
+            if not html and mode in {"samples", "live-first"} and sample.exists():
                 html = sample.read_text(encoding="utf-8")
-            elif live:
-                r = requests.get(build_search_url(query), timeout=15, headers={"User-Agent": "Mozilla/5.0"})
-                r.raise_for_status()
-                html = r.text
-            else:
-                out.append(status_row(article, query, "ошибка", "sample html not found", checked_at))
+            if not html:
+                out.append(status_row(article, query, "ошибка", "html source not available", checked_at))
                 continue
             rows = select_top(parse_html(html, article, query, checked_at))
             out.extend(rows or [status_row(article, query, "не найдено", checked_at=checked_at)])
         except Exception as e:
-            out.append(status_row(article, query, "ошибка", str(e), checked_at))
+            if mode == "live-first" and sample.exists():
+                rows = select_top(parse_html(sample.read_text(encoding="utf-8"), article, query, checked_at))
+                out.extend(rows or [status_row(article, query, "не найдено", checked_at=checked_at)])
+            else:
+                out.append(status_row(article, query, "ошибка", str(e), checked_at))
     return out
 
 
@@ -150,11 +161,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Mini Avito parser for test task")
     parser.add_argument("--samples", type=Path, default=Path("samples"))
     parser.add_argument("--output", type=Path, default=Path("result.csv"))
-    parser.add_argument("--live", action="store_true", help="try Avito HTTP without bypassing protections")
+    parser.add_argument("--mode", choices=("live-first", "live", "samples"), default="live-first")
+    parser.add_argument("--live", action="store_true", help="alias for --mode live")
     parser.add_argument("--checked-at", default="")
     args = parser.parse_args(argv)
     checked_at = args.checked_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
-    write_csv(collect(args.samples, args.live, checked_at), args.output)
+    mode = "live" if args.live else args.mode
+    write_csv(collect(args.samples, mode, checked_at), args.output)
     return 0
 
 
