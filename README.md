@@ -60,7 +60,20 @@ article,name
 python avito_parser.py --articles articles.csv --delay 3 --output result.csv
 ```
 
-## Проверка
+## Проверка live на локальном ПК
+
+На домашнем интернете Avito чаще открывается, чем с VPS/датацентра. Проверка без обхода защиты:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+python avito_parser.py --mode live --output result-live.csv --raw-dir raw_html
+```
+
+Если Avito доступен, в `result-live.csv` будут строки со статусом `найдено` или `не найдено`. Если Avito ограничил доступ, будет строка `ошибка` с текстом HTTP-ошибки. Сохранённые страницы для разбора лежат в `raw_html/`.
+
+## Проверка тестов
 
 ```bash
 pytest -q
