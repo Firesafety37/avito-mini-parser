@@ -2,7 +2,7 @@
 
 Мини-парсер объявлений Avito по артикулам из тестового задания.
 
-По умолчанию проект сначала делает live-запросы к Avito. Если Avito ограничивает доступ, включается fallback на сохранённые HTML-файлы из `samples/`. Live-режим не обходит CAPTCHA, авторизацию, cookies и другие средства защиты.
+По умолчанию проект работает как `live-first`: сначала делает реальные запросы к Avito, сохраняет/парсит HTML, а если Avito ограничивает доступ — честно отражает ошибку или использует `samples/` как воспроизводимый fallback. CAPTCHA, cookies, авторизация, прокси и обход блокировок не используются.
 
 ## Установка
 
@@ -12,24 +12,52 @@ python3 -m venv .venv
 pip install -r requirements.txt
 ```
 
-## Запуск
+## Быстрый запуск
 
 ```bash
 python avito_parser.py --output result.csv
 ```
 
-По умолчанию используется `--mode live-first`: сначала live-запросы к Avito, если Avito ограничил доступ — fallback на `samples/`.
+## Режимы
+
+Live-first, основной режим:
+
+```bash
+python avito_parser.py --mode live-first --output result.csv --raw-dir raw_html
+```
 
 Только live, без fallback:
 
 ```bash
-python avito_parser.py --mode live --output result-live.csv
+python avito_parser.py --mode live --output result-live.csv --raw-dir raw_html
 ```
 
 Только сохранённые HTML:
 
 ```bash
 python avito_parser.py --mode samples --samples samples --output result.csv
+```
+
+## Масштабирование списка артикулов
+
+Без изменения кода можно передать CSV:
+
+```bash
+python avito_parser.py --articles articles.csv --output result.csv
+```
+
+Формат `articles.csv`:
+
+```csv
+article,name
+223112R020,Прокладка головки блока цилиндра
+233002F700,Балансирный вал в сборе
+```
+
+Для большого списка можно увеличить паузу между live-запросами:
+
+```bash
+python avito_parser.py --articles articles.csv --delay 3 --output result.csv
 ```
 
 ## Проверка
@@ -60,14 +88,20 @@ pytest -q
 
 ## Регион, состояние и сортировка
 
-- Регион задаётся в `build_search_url()` как поиск по Москве и Московской области.
-- Состояние задаётся в URL-фильтре и дополнительно проверяется в `is_new_item()`.
-- Сортировка по цене задаётся параметрами URL и дополнительно гарантируется в `select_top()`.
+- Регион задаётся в `build_search_url()` как `/moskva_i_mo/zapchasti_i_aksessuary`.
+- Состояние задаётся URL-фильтром `f=...` и дополнительно проверяется в `is_new_item()`.
+- Сортировка по цене задаётся `s=1` и дополнительно гарантируется в `select_top()`.
 
-## Ограничение
+## Если Avito блокирует live
 
-Проект не обходит CAPTCHA, авторизацию, блокировки, cookies и другие средства защиты Avito. Если live-страница недоступна, скрипт пишет строку со статусом `ошибка`. Основной проверяемый режим — парсинг HTML из `samples/`.
+Скрипт не скрывает проблему: в `--mode live` появится строка `ошибка`, например `Avito access restricted` или `HTTP 429`. Это ожидаемо для датацентров/VPS и не обходится по условиям задания.
 
-## План
+Для проверки логики без обхода защиты используйте:
 
-Дорожная карта выполнения: [ROADMAP.md](ROADMAP.md).
+```bash
+python avito_parser.py --mode samples --output result.csv
+```
+
+## Дорожная карта
+
+[ROADMAP.md](ROADMAP.md)

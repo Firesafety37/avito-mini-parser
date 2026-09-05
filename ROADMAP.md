@@ -104,6 +104,7 @@ Expected: FAIL, потому что `avito_parser.py` ещё нет.
 
 **Implementation outline:**
 - `ARTICLES = {"223112R020": "Прокладка головки блока цилиндра", ...}`
+- `--articles articles.csv` для масштабирования списка без изменения кода
 - `FIELDNAMES = [...]`
 - `make_status_row(article, query, status, error="") -> dict`
 - `write_csv(rows, path)` через stdlib `csv.DictWriter`.
@@ -187,8 +188,10 @@ Expected: PASS.
 
 **CLI:**
 ```bash
-python avito_parser.py --samples samples --output result.csv
-python avito_parser.py --live --output result.csv
+python avito_parser.py --output result.csv
+python avito_parser.py --mode live --output result-live.csv
+python avito_parser.py --mode samples --samples samples --output result.csv
+python avito_parser.py --articles articles.csv --delay 3 --output result.csv
 ```
 
 **Behavior:**

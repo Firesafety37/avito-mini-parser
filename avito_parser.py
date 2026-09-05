@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote_plus, urljoin
@@ -14,6 +15,7 @@ ARTICLES = {
     "223112R020": "Прокладка головки блока цилиндра",
     "233002F700": "Балансирный вал в сборе",
 }
+DEFAULT_ARTICLES = list(ARTICLES.items())
 FIELDNAMES = [
     "article",
     "query",
@@ -65,8 +67,16 @@ def status_row(article: str, query: str, status: str, error: str = "", checked_a
 
 
 def build_search_url(query: str) -> str:
-    # Avito params are intentionally simple: Москва, condition=new, sort by cheap first.
-    return f"{AVITO}/moskva_i_mo?q={quote_plus(query)}&s=1&f=ASgBAgICAUTyCrCKAQ"
+    # Avito params are intentionally simple: category + Москва/МО + cheap first + condition filter.
+    return f"{AVITO}/moskva_i_mo/zapchasti_i_aksessuary?q={quote_plus(query)}&s=1&f=ASgBAgICAUTyCrCKAQ"
+
+
+def load_articles(path: Path | None) -> list[tuple[str, str]]:
+    if path is None:
+        return DEFAULT_ARTICLES
+    with path.open(newline="", encoding="utf-8") as f:
+        rows = csv.DictReader(f)
+        return [(r["article"].strip(), r.get("name", "").strip()) for r in rows if r.get("article", "").strip()]
 
 
 def _text(node, selector: str) -> str:
@@ -124,23 +134,51 @@ def write_csv(rows: list[dict], output: Path) -> None:
         writer.writerows(rows)
 
 
-def fetch_live_html(url: str) -> str:
-    r = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
-    r.raise_for_status()
-    if "Доступ ограничен" in r.text or "captcha" in r.text.lower():
-        raise RuntimeError("Avito access restricted")
-    return r.text
+def fetch_live_html(url: str, timeout: int = 20, retries: int = 1, session: requests.Session | None = None) -> str:
+    http = session or requests.Session()
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            r = http.get(
+                url,
+                timeout=timeout,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+                    "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+                },
+            )
+            r.raise_for_status()
+            if "Доступ ограничен" in r.text or "проблема с IP" in r.text or "captcha" in r.text.lower():
+                raise RuntimeError("Avito access restricted")
+            return r.text
+        except Exception as e:
+            last_error = e
+            if attempt < retries:
+                time.sleep(1 + attempt)
+    raise RuntimeError(str(last_error))
 
 
-def collect(samples: Path, mode: str, checked_at: str, fetch_html=fetch_live_html) -> list[dict]:
+def collect(
+    samples: Path,
+    mode: str,
+    checked_at: str,
+    fetch_html=fetch_live_html,
+    articles: list[tuple[str, str]] | None = None,
+    raw_dir: Path | None = None,
+    delay: float = 0,
+) -> list[dict]:
     out = []
-    for article, name in ARTICLES.items():
-        query = f"{article} {name}"
+    items = articles or DEFAULT_ARTICLES
+    for i, (article, name) in enumerate(items):
+        query = f"{article} {name}".strip()
         sample = samples / f"{article}.html"
         try:
             html = ""
             if mode in {"live", "live-first"}:
                 html = fetch_html(build_search_url(query))
+                if raw_dir:
+                    raw_dir.mkdir(parents=True, exist_ok=True)
+                    (raw_dir / f"{article}.html").write_text(html, encoding="utf-8")
             if not html and mode in {"samples", "live-first"} and sample.exists():
                 html = sample.read_text(encoding="utf-8")
             if not html:
@@ -154,6 +192,8 @@ def collect(samples: Path, mode: str, checked_at: str, fetch_html=fetch_live_htm
                 out.extend(rows or [status_row(article, query, "не найдено", checked_at=checked_at)])
             else:
                 out.append(status_row(article, query, "ошибка", str(e), checked_at))
+        if delay and i < len(items) - 1:
+            time.sleep(delay)
     return out
 
 
@@ -161,13 +201,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Mini Avito parser for test task")
     parser.add_argument("--samples", type=Path, default=Path("samples"))
     parser.add_argument("--output", type=Path, default=Path("result.csv"))
+    parser.add_argument("--articles", type=Path, help="CSV with columns: article,name")
+    parser.add_argument("--raw-dir", type=Path, help="save fetched live HTML for repeatable debugging")
+    parser.add_argument("--delay", type=float, default=1.0, help="seconds between live article requests")
     parser.add_argument("--mode", choices=("live-first", "live", "samples"), default="live-first")
     parser.add_argument("--live", action="store_true", help="alias for --mode live")
     parser.add_argument("--checked-at", default="")
     args = parser.parse_args(argv)
     checked_at = args.checked_at or datetime.now(timezone.utc).isoformat(timespec="seconds")
     mode = "live" if args.live else args.mode
-    write_csv(collect(args.samples, mode, checked_at), args.output)
+    write_csv(collect(args.samples, mode, checked_at, articles=load_articles(args.articles), raw_dir=args.raw_dir, delay=args.delay), args.output)
     return 0
 
 

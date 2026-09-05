@@ -59,6 +59,31 @@ def test_live_first_uses_http_before_samples():
     assert [r for r in rows if r["article"] == "223112R020"][0]["price"] == 777
 
 
+def test_articles_can_be_loaded_from_csv(tmp_path):
+    articles = tmp_path / "articles.csv"
+    articles.write_text("article,name\nABC123,Тестовая деталь\n", encoding="utf-8")
+
+    assert p.load_articles(articles) == [("ABC123", "Тестовая деталь")]
+
+
+def test_live_mode_reports_access_errors_without_sample_fallback():
+    def blocked(url):
+        raise RuntimeError("Avito access restricted: HTTP 429")
+
+    rows = p.collect(ROOT / "samples", mode="live", checked_at="now", fetch_html=blocked)
+
+    assert rows[0]["status"] == "ошибка"
+    assert "429" in rows[0]["error"]
+
+
+def test_live_first_can_save_raw_html(tmp_path):
+    html = "<html>empty</html>"
+
+    p.collect(tmp_path, mode="live-first", checked_at="now", fetch_html=lambda url: html, raw_dir=tmp_path)
+
+    assert (tmp_path / "223112R020.html").exists()
+
+
 def test_main_writes_csv_with_required_columns(tmp_path):
     out = tmp_path / "result.csv"
 
